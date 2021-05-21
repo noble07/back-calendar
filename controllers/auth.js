@@ -1,61 +1,107 @@
-const {response} = require('express') // Solo es para habilitar el IntelliSense
-const User = require('../models/User')
+const { response } = require("express"); // Solo es para habilitar el IntelliSense
+const bcrypt = require("bcryptjs");
+const User = require("../models/User");
+const {generarJWT} = require("../helpers/jwt")
 
-const crearUsuario = async(req, res = response) => {
-
-  const {email, password} = req.body
+const crearUsuario = async (req, res = response) => {
+  const { email, password } = req.body;
 
   try {
+    let user = await User.findOne({ email });
 
-    let user = await User.findOne({ email })
-
-    if(user){
+    if (user) {
       return res.status(400).json({
         ok: false,
-        msg: 'Un usuario existe con ese corre'
-      })
+        msg: "El usuario ya existe",
+      });
     }
 
-    user = new User(req.body)
-  
-    await user.save()
-  
+    user = new User(req.body);
+
+    // Encriptar contraseña
+    const salt = bcrypt.genSaltSync();
+    user.password = bcrypt.hashSync(password, salt);
+
+    await user.save();
+
+    // Generar JWT
+    const token = await generarJWT(user.id, user.name)
+
     res.status(201).json({
       ok: true,
       uid: user.id,
-      name: user.name
-    })
+      name: user.name,
+      token
+    });
+
   } catch (error) {
-    console.log(error)
+    console.log(error);
     res.status(500).json({
       ok: false,
-      msg: 'Por favor hable con el administrador'
+      msg: "Por favor hable con el administrador",
+    });
+  }
+};
+
+const loginUsuario = async(req, res = response) => {
+  const { email, password } = req.body;
+
+  try {
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({
+        ok: false,
+        msg: "El usuario no existe con ese email",
+      });
+    }
+
+    // Confirmar los passwords
+    const validPassword = bcrypt.compareSync(password, user.password)
+
+    if(!validPassword){
+      return res.status(400).json({
+        ok: false,
+        msg: 'Password incorrecto'
+      })
+    }
+
+    // Generar JWT
+    const token = await generarJWT(user.id, user.name)
+
+    res.json({
+      ok: true,
+      uid: user.id,
+      name: user.name,
+      token
     })
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      ok: false,
+      msg: "Por favor hable con el administrador",
+    });
   }
 
-}
+};
 
-const loginUsuario = (req, res = response) => {
+const revalidarToken = async(req, res = response) => {
 
-  const {email, password} = req.body
+  const {uid, name} = req
 
-  res.status(201).json({
-    ok: true,
-    msg: 'Login',
-    email,
-    password
-  })
-}
+  const token = await generarJWT(uid, name)
 
-const revalidarToken = (req, res = response) => {
   res.json({
     ok: true,
-    msg: 'renew'
-  })
-}
+    token
+  });
+
+};
 
 module.exports = {
   crearUsuario,
   loginUsuario,
-  revalidarToken
-}
+  revalidarToken,
+};
